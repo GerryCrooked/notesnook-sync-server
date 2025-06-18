@@ -10,7 +10,7 @@ x-server-discovery: &server-discovery
   NOTESNOOK_APP_HOST: ${NOTESNOOK_APP_PUBLIC_URL}
 
 x-env-files: &env-files
-  - .env
+  - stack.env
 
 services:
   validate:
