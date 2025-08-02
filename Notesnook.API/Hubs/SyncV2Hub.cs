@@ -139,7 +139,7 @@ namespace Notesnook.API.Hubs
 
                 if (!await unit.Commit()) return 0;
 
-                await new SyncDeviceService(new SyncDevice(ref userId, ref deviceId)).AddIdsToOtherDevicesAsync(pushItem.Items.Select((i) => $"{i.ItemId}:{pushItem.Type}").ToList());
+                new SyncDeviceService(new SyncDevice(userId, deviceId)).AddIdsToOtherDevices(pushItem.Items.Select((i) => $"{i.ItemId}:{pushItem.Type}").ToList());
                 return 1;
             }
             finally
@@ -158,7 +158,7 @@ namespace Notesnook.API.Hubs
 
         private static async IAsyncEnumerable<SyncTransferItemV2> PrepareChunks(Func<string, string[], bool, int, Task<IAsyncCursor<SyncItem>>>[] collections, string[] types, string userId, string[] ids, int size, bool resetSync, long maxBytes)
         {
-            var chunksProcessed = 0;
+            var itemsProcessed = 0;
             for (int i = 0; i < collections.Length; i++)
             {
                 var type = types[i];
@@ -180,11 +180,12 @@ namespace Notesnook.API.Hubs
                         totalBytes += item.Length + METADATA_BYTES;
                         if (totalBytes >= maxBytes)
                         {
+                            itemsProcessed += chunk.Count;
                             yield return new SyncTransferItemV2
                             {
                                 Items = chunk,
                                 Type = type,
-                                Count = chunksProcessed
+                                Count = itemsProcessed
                             };
 
                             totalBytes = 0;
@@ -194,11 +195,12 @@ namespace Notesnook.API.Hubs
                 }
                 if (chunk.Count > 0)
                 {
+                    itemsProcessed += chunk.Count;
                     yield return new SyncTransferItemV2
                     {
                         Items = chunk,
                         Type = type,
-                        Count = chunksProcessed
+                        Count = itemsProcessed
                     };
                 }
             }
@@ -211,8 +213,11 @@ namespace Notesnook.API.Hubs
 
             SyncEventCounterSource.Log.FetchV2();
 
-            var deviceService = new SyncDeviceService(new SyncDevice(ref userId, ref deviceId));
+            var device = new SyncDevice(userId, deviceId);
+            var deviceService = new SyncDeviceService(device);
             if (!deviceService.IsDeviceRegistered()) deviceService.RegisterDevice();
+
+            device.LastAccessTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var isResetSync = deviceService.IsSyncReset();
             if (!deviceService.IsUnsynced() &&
@@ -224,7 +229,7 @@ namespace Notesnook.API.Hubs
             stopwatch.Start();
             try
             {
-                string[] ids = await deviceService.FetchUnsyncedIdsAsync();
+                string[] ids = deviceService.FetchUnsyncedIds();
 
                 var chunks = PrepareChunks(
                     collections: [
@@ -262,7 +267,7 @@ namespace Notesnook.API.Hubs
                     {
                         var syncedIds = chunk.Items.Select((i) => $"{i.ItemId}:{chunk.Type}").ToHashSet();
                         ids = ids.Where((id) => !syncedIds.Contains(id)).ToArray();
-                        await deviceService.WritePendingIdsAsync(ids);
+                        deviceService.WritePendingIds(ids);
                     }
                 }
 
