@@ -23,6 +23,12 @@ using Notesnook.API.Interfaces;
 
 namespace Notesnook.API.Models
 {
+    public class Limit
+    {
+        public long Value { get; set; }
+        public long UpdatedAt { get; set; }
+    }
+
     public class UserSettings : IUserSettings
     {
         public UserSettings()
@@ -34,6 +40,8 @@ namespace Notesnook.API.Models
         public string Salt { get; set; }
         public EncryptedData VaultKey { get; set; }
         public EncryptedData AttachmentsKey { get; set; }
+        public EncryptedData MonographPasswordsKey { get; set; }
+        public Limit StorageLimit { get; set; }
 
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]

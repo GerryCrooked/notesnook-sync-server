@@ -101,25 +101,6 @@ namespace Notesnook.API.Hubs
             };
         }
 
-        private Func<string, IEnumerable<string>, bool, int, Task<IAsyncCursor<SyncItem>>> MapTypeToFindItemsAction(string type)
-        {
-            return type switch
-            {
-                "settingitem" => Repositories.Settings.FindItemsById,
-                "attachment" => Repositories.Attachments.FindItemsById,
-                "note" => Repositories.Notes.FindItemsById,
-                "notebook" => Repositories.Notebooks.FindItemsById,
-                "content" => Repositories.Contents.FindItemsById,
-                "shortcut" => Repositories.Shortcuts.FindItemsById,
-                "reminder" => Repositories.Reminders.FindItemsById,
-                "relation" => Repositories.Relations.FindItemsById,
-                "color" => Repositories.Colors.FindItemsById,
-                "vault" => Repositories.Vaults.FindItemsById,
-                "tag" => Repositories.Tags.FindItemsById,
-                _ => null,
-            };
-        }
-
         public async Task<int> PushItems(string deviceId, SyncTransferItemV2 pushItem)
         {
             var userId = Context.User.FindFirstValue("sub");
@@ -270,14 +251,14 @@ namespace Notesnook.API.Hubs
                     }
                 }
 
-                var unsyncedMonographs = ids.Where((id) => id.EndsWith(":monograph")).ToHashSet();
-                var unsyncedMonographIds = unsyncedMonographs.Select((id) => id.Split(":")[0]).ToArray();
-                var userMonographs = isResetSync
-                    ? await Repositories.Monographs.FindAsync(m => m.UserId == userId)
-                    : await Repositories.Monographs.FindAsync(m => m.UserId == userId && unsyncedMonographIds.Contains(m.ItemId));
+                // var unsyncedMonographs = ids.Where((id) => id.EndsWith(":monograph")).ToHashSet();
+                // var unsyncedMonographIds = unsyncedMonographs.Select((id) => id.Split(":")[0]).ToArray();
+                // var userMonographs = isResetSync
+                //     ? await Repositories.Monographs.FindAsync(m => m.UserId == userId)
+                //     : await Repositories.Monographs.FindAsync(m => m.UserId == userId && unsyncedMonographIds.Contains(m.ItemId));
 
-                if (userMonographs.Any() && !await Clients.Caller.SendMonographs(userMonographs).WaitAsync(TimeSpan.FromMinutes(10)))
-                    throw new HubException("Client rejected monographs.");
+                // if (userMonographs.Any() && !await Clients.Caller.SendMonographs(userMonographs).WaitAsync(TimeSpan.FromMinutes(10)))
+                //     throw new HubException("Client rejected monographs.");
 
                 deviceService.Reset();
 
