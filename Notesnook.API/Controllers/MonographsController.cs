@@ -23,13 +23,17 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AngleSharp;
+using AngleSharp.Dom;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using Notesnook.API.Authorization;
 using Notesnook.API.Models;
 using Notesnook.API.Services;
 using Streetwriters.Common;
+using Streetwriters.Common.Interfaces;
 using Streetwriters.Common.Messages;
 using Streetwriters.Data.Interfaces;
 using Streetwriters.Data.Repositories;
@@ -43,12 +47,14 @@ namespace Notesnook.API.Controllers
     {
         const string SVG_PIXEL = "<svg xmlns='http://www.w3.org/2000/svg' width='1' height='1'><circle r='9'/></svg>";
         private Repository<Monograph> Monographs { get; set; }
+        private readonly IURLAnalyzer urlAnalyzer;
         private readonly IUnitOfWork unit;
         private const int MAX_DOC_SIZE = 15 * 1024 * 1024;
-        public MonographsController(Repository<Monograph> monographs, IUnitOfWork unitOfWork)
+        public MonographsController(Repository<Monograph> monographs, IUnitOfWork unitOfWork, IURLAnalyzer analyzer)
         {
             Monographs = monographs;
             unit = unitOfWork;
+            urlAnalyzer = analyzer;
         }
 
         private static FilterDefinition<Monograph> CreateMonographFilter(string userId, Monograph monograph)
@@ -110,7 +116,7 @@ namespace Notesnook.API.Controllers
                 }
 
                 if (monograph.EncryptedContent == null)
-                    monograph.CompressedContent = monograph.Content.CompressBrotli();
+                    monograph.CompressedContent = (await CleanupContentAsync(monograph.Content)).CompressBrotli();
                 monograph.UserId = userId;
                 monograph.DatePublished = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -161,7 +167,7 @@ namespace Notesnook.API.Controllers
                     return base.BadRequest("Monograph is too big. Max allowed size is 15mb.");
 
                 if (monograph.EncryptedContent == null)
-                    monograph.CompressedContent = monograph.Content.CompressBrotli();
+                    monograph.CompressedContent = (await CleanupContentAsync(monograph.Content)).CompressBrotli();
                 else
                     monograph.Content = null;
 
@@ -320,6 +326,51 @@ namespace Notesnook.API.Controllers
                     Data = JsonSerializer.Serialize(new { reason = "Monographs updated." })
                 }
             });
+        }
+
+        private async Task<string> CleanupContentAsync(string content)
+        {
+            try
+            {
+                var json = JsonSerializer.Deserialize<MonographContent>(content);
+                var html = json.Data;
+                if (!Constants.IS_SELF_HOSTED && !ProUserRequirement.IsUserPro(User))
+                {
+                    var config = Configuration.Default.WithDefaultLoader();
+                    var context = BrowsingContext.New(config);
+                    var document = await context.OpenAsync(r => r.Content(html));
+                    foreach (var element in document.QuerySelectorAll("a,iframe,img,object,svg,button,link"))
+                    {
+                        element.Remove();
+                    }
+                    html = document.ToHtml();
+                }
+
+                if (ProUserRequirement.IsUserPro(User))
+                {
+                    var config = Configuration.Default.WithDefaultLoader();
+                    var context = BrowsingContext.New(config);
+                    var document = await context.OpenAsync(r => r.Content(html));
+                    foreach (var element in document.QuerySelectorAll("a"))
+                    {
+                        var href = element.GetAttribute("href");
+                        if (string.IsNullOrEmpty(href)) continue;
+                        if (!await urlAnalyzer.IsURLSafeAsync(href)) element.RemoveAttribute("href");
+                    }
+                    html = document.ToHtml();
+                }
+
+                return JsonSerializer.Serialize<MonographContent>(new MonographContent
+                {
+                    Type = json.Type,
+                    Data = html
+                });
+            }
+            catch (Exception ex)
+            {
+                await Slogger<MonographsController>.Error("CleanupContentAsync", ex.ToString());
+                return content;
+            }
         }
     }
 }
